@@ -11,7 +11,7 @@
 #include "compat.h"
 #include "swift.h"
 // jni header file
-#include "com_tudelft_swiftstream_NativeLib.h"
+#include "com_tudelft_triblerdroid_first_NativeLib.h"
 #include <sstream>
 
 
@@ -41,7 +41,7 @@ bool enginestarted = false;
 #define STREAM_MODE		1
 
 
-JNIEXPORT jstring JNICALL Java_com_tudelft_swiftstream_NativeLib_start (JNIEnv * env, jobject obj, jstring hash, jstring INtracker, jstring destination) {
+JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_start (JNIEnv * env, jobject obj, jstring hash, jstring INtracker, jstring destination) {
 
 	dprintf("NativeLib::start called\n");
 
@@ -145,7 +145,7 @@ JNIEXPORT jstring JNICALL Java_com_tudelft_swiftstream_NativeLib_start (JNIEnv *
  * Method:    progress
  * Signature: ()I
  */
-JNIEXPORT jint JNICALL Java_com_tudelft_swiftstream_NativeLib_progress(JNIEnv * env, jobject obj) {
+JNIEXPORT jint JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_progress(JNIEnv * env, jobject obj) {
 
 	// Enter libevent mainloop
 	event_base_dispatch(Channel::evbase);
@@ -162,7 +162,7 @@ JNIEXPORT jint JNICALL Java_com_tudelft_swiftstream_NativeLib_progress(JNIEnv * 
  *
  * Arno, 2012-01-30: Now only called on Application shutdown.
  */
-JNIEXPORT jstring JNICALL Java_com_tudelft_swiftstream_NativeLib_stop(JNIEnv * env, jobject obj) {
+JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_stop(JNIEnv * env, jobject obj) {
 
 	if (!enginestarted)
 		return env->NewStringUTF("stopped");
@@ -181,7 +181,7 @@ JNIEXPORT jstring JNICALL Java_com_tudelft_swiftstream_NativeLib_stop(JNIEnv * e
  * Method:    hello
  * Signature: ()Ljava/lang/String;
  */
-JNIEXPORT jstring JNICALL Java_com_tudelft_swiftstream_NativeLib_hello(JNIEnv * env, jobject obj) {
+JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_hello(JNIEnv * env, jobject obj) {
 
 	std::stringstream rets;
 

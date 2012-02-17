@@ -540,7 +540,11 @@ bool HTTPIsSending()
 }
 
 #include <sstream>
-
+/*
+ * Return progress info in "x/y" format. This is returned to the Java Activity
+ * which uses it to update the progress bar. Currently x is not the number of
+ * bytes downloaded, but the number of bytes written to the HTTP connection.
+ */
 std::string HTTPGetProgressString()
 {
 	std::stringstream rets;

@@ -53,6 +53,13 @@ int cmd_gw_reqs_count = 0;
 struct evconnlistener *cmd_evlistener = NULL;
 struct evbuffer *cmd_evbuffer = NULL; // Data received on cmd socket : WARNING: one for all cmd sockets
 
+/*
+ * SOCKTUNNEL
+ * We added the ability for a process to tunnel data over swift's UDP socket.
+ * The process should send TUNNELSEND commands over the CMD TCP socket and will
+ * receive TUNNELRECV commands from swift, containing data received via UDP
+ * on channel 0xffffffff.
+ */
 typedef enum {
 	CMDGW_TUNNEL_SCAN4CRLF,
 	CMDGW_TUNNEL_READTUNNEL
@@ -63,7 +70,8 @@ uint32_t	 cmd_tunnel_expect=0;
 Address		 cmd_tunnel_dest_addr;
 evutil_socket_t   cmd_tunnel_sock=INVALID_SOCKET;
 
-Address cmd_gw_httpaddr;	          // HTTP gateway address for PLAY cmd
+// HTTP gateway address for PLAY cmd
+Address cmd_gw_httpaddr;
 
 
 bool cmd_gw_debug=false;
@@ -393,6 +401,7 @@ void CmdGwUpdateDLStatesCallback()
 void CmdGwDataCameInCallback(struct bufferevent *bev, void *ctx)
 {
 	// Turn TCP stream into lines deliniated by \r\n
+
 	evutil_socket_t cmdsock = bufferevent_getfd(bev);
 	if (cmd_gw_debug)
 		fprintf(stderr,"CmdGwDataCameIn: ENTER %d\n", cmdsock );
@@ -409,13 +418,17 @@ void CmdGwDataCameInCallback(struct bufferevent *bev, void *ctx)
 
 	int totlen = evbuffer_get_length(cmd_evbuffer);
 
-	fprintf(stderr,"cmdgw: TCPDataCameIn: State %d, got %d new bytes, have %d want %d\n", (int)cmd_tunnel_state, inlen, totlen, cmd_tunnel_expect );
+	if (cmd_gw_debug)
+		fprintf(stderr,"cmdgw: TCPDataCameIn: State %d, got %d new bytes, have %d want %d\n", (int)cmd_tunnel_state, inlen, totlen, cmd_tunnel_expect );
 
 	CmdGwProcessData(cmdsock);
 }
 
+
 void CmdGwProcessData(evutil_socket_t cmdsock)
 {
+	// Process CMD data in the cmd_evbuffer
+
 	if (cmd_tunnel_state == CMDGW_TUNNEL_SCAN4CRLF)
 	{
 		bool ok=false;
@@ -429,10 +442,11 @@ void CmdGwProcessData(evutil_socket_t cmdsock)
 	// Not else!
 	if (cmd_tunnel_state == CMDGW_TUNNEL_READTUNNEL)
 	{
-		// Got "TUNNEL addr size\r\n" command, now read
+		// Got "TUNNELSEND addr size\r\n" command, now read
 		// size bytes, i.e., cmd_tunnel_expect bytes.
 
-		fprintf(stderr,"cmdgw: procTCPdata: tunnel state, got %d, want %d\n", evbuffer_get_length(cmd_evbuffer), cmd_tunnel_expect );
+		if (cmd_gw_debug)
+			fprintf(stderr,"cmdgw: procTCPdata: tunnel state, got %d, want %d\n", evbuffer_get_length(cmd_evbuffer), cmd_tunnel_expect );
 
 		if (evbuffer_get_length(cmd_evbuffer) >= cmd_tunnel_expect)
 		{
@@ -734,7 +748,9 @@ int CmdGwHandleCommand(evutil_socket_t cmdsock, char *copyline)
     		return ERROR_BAD_ARG;
 
         cmd_tunnel_state = CMDGW_TUNNEL_READTUNNEL;
-        fprintf(stderr,"cmdgw: Want tunnel %d bytes to %s\n", cmd_tunnel_expect, cmd_tunnel_dest_addr.str() );
+
+        if (cmd_gw_debug)
+        	fprintf(stderr,"cmdgw: Want tunnel %d bytes to %s\n", cmd_tunnel_expect, cmd_tunnel_dest_addr.str() );
     }
     else
     {
@@ -805,7 +821,7 @@ bool InstallCmdGateway (struct event_base *evbase,Address cmdaddr,Address httpad
 	// Allocate libevent listener for cmd connections
 	// From http://www.wangafu.net/~nickm/libevent-book/Ref8_listener.html
 
-    fprintf(stderr,"cmdgw: Creating new listener on addr %s\n", cmdaddr.str() );
+    fprintf(stderr,"cmdgw: Creating new TCP listener on addr %s\n", cmdaddr.str() );
   
     const struct sockaddr_in sin = (sockaddr_in)cmdaddr;
 
@@ -832,7 +848,8 @@ void swift::CmdGwTunnelUDPDataCameIn(Address src, struct evbuffer* evb)
 {
 	// Message received on UDP socket, forward over TCP conn.
 
-	fprintf(stderr,"cmdgw: TunnelUDPData:DataCameIn %d bytes from %s\n", evbuffer_get_length(evb), src.str() );
+	if (cmd_gw_debug)
+		fprintf(stderr,"cmdgw: TunnelUDPData:DataCameIn %d bytes from %s\n", evbuffer_get_length(evb), src.str() );
 
 	/*
 	 *  Format:
@@ -846,15 +863,13 @@ void swift::CmdGwTunnelUDPDataCameIn(Address src, struct evbuffer* evb)
 
 	std::stringbuf *pbuf=oss.rdbuf();
 	size_t slen = strlen(pbuf->str().c_str());
-
-	fprintf(stderr,"cmdgw: TunnelUDPData: Sending cmd %s over fd %d\n", pbuf->str().c_str(), cmd_tunnel_sock );
-
 	send(cmd_tunnel_sock,pbuf->str().c_str(),slen,0);
 
 	slen = evbuffer_get_length(evb);
 	uint8_t *data = evbuffer_pullup(evb,slen);
 	send(cmd_tunnel_sock,(const char *)data,slen,0);
-    evbuffer_drain(evb,slen);
+
+	evbuffer_drain(evb,slen);
 }
 
 
@@ -863,7 +878,8 @@ void swift::CmdGwTunnelSendUDP(struct evbuffer *evb)
 	// Received data from TCP connection, send over UDP to specified dest
 	cmd_tunnel_state = CMDGW_TUNNEL_SCAN4CRLF;
 
-	fprintf(stderr,"cmdgw: sendudp:");
+	if (cmd_gw_debug)
+		fprintf(stderr,"cmdgw: sendudp:");
 
 	struct evbuffer *sendevbuf = evbuffer_new();
 	int ret = evbuffer_remove_buffer(evb, sendevbuf, cmd_tunnel_expect);
@@ -882,8 +898,7 @@ void swift::CmdGwTunnelSendUDP(struct evbuffer *evb)
 	}
 	evutil_socket_t sock = Channel::sock_open[Channel::sock_count-1].sock;
 
-	fprintf(stderr,"cmdgw: sendudp: Sending %d\n", evbuffer_get_length(sendevbuf) );
-
 	Channel::SendTo(sock,cmd_tunnel_dest_addr,sendevbuf);
+
 	evbuffer_free(sendevbuf);
 }

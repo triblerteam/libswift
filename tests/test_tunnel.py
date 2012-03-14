@@ -5,7 +5,7 @@
 import sys
 import os
 import unittest
-from threading import Event, Thread, currentThread
+from threading import Event, Thread, currentThread, Condition
 from socket import error as socketerror
 from time import sleep
 from traceback import print_exc
@@ -19,6 +19,7 @@ from M2Crypto import Rand
 DEBUG = False
 
 
+NREPEATS = 10
 
 
 # Thread must come as first parent class!
@@ -41,11 +42,14 @@ class UDPListener(Thread):
             print >>sys.stderr,"test: udp: Got",len(data)
             self.testcase.assertEqual(len(data),self.testcase.randsize)
             self.testcase.assertEqual(data,self.testcase.data)
+            self.testcase.notify()
 
 
 class TestTunnel(unittest.TestCase):
     
     def setUp(self):
+        
+        self.cond = Condition()
         
         self.peer1port = 1234
         self.peer1 = UDPListener(self,self.peer1port)
@@ -54,13 +58,9 @@ class TestTunnel(unittest.TestCase):
         self.binpath = os.path.join("..","swift")
         self.destdir = "."
         
-        #self.cmdport = random.randint(11001,11999)  # NSSA control socket
-        #self.httpport = random.randint(12001,12999) # content web server
-        #self.swiftport = random.randint(13001,13999) # content web server
-        
-        self.cmdport = 3100
-        self.httpport = 4100
-        self.swiftport = 5100
+        self.cmdport = random.randint(11001,11999)  # NSSA control socket
+        self.httpport = random.randint(12001,12999) # content web server
+        self.swiftport = random.randint(13001,13999) # content web server
         
         # Security: only accept commands from localhost, enable HTTP gw, 
         # no stats/webUI web server
@@ -80,29 +80,42 @@ class TestTunnel(unittest.TestCase):
         
         print >>sys.stderr,"test: SwiftProcess: Running",args
         
-        #self.popen = subprocess.Popen(args,close_fds=True,cwd=self.destdir) 
+        self.popen = subprocess.Popen(args,close_fds=True,cwd=self.destdir) 
 
         self.udpsendport = random.randint(14001,14999) #
 
         sleep(2) # let server threads start
 
     def tearDown(self):
-        sleep(60)
+        sleep(5)
+        self.popen.kill()
+
+    def notify(self):
+        self.cond.acquire()
+        self.cond.notify()
+        self.cond.release()
+
+
+    def wait(self):
+        self.cond.acquire()
+        self.cond.wait()
+        self.cond.release()
 
     def test_tunnel_send(self):
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.s.connect(("127.0.0.1", self.cmdport))
 
-        # Test: Send over TCP, receive on UDP
-        for i in range(0,0):        
+        print >>sys.stderr,"test: Send over TCP, receive on UDP"
+        for i in range(0,NREPEATS):        
             self.randsize = random.randint(1,2048)
             self.data = Rand.rand_bytes(self.randsize)
             cmd = "TUNNELSEND 127.0.0.1:"+str(self.peer1port)+" "+str(self.randsize)+"\r\n";
             self.s.send(cmd+self.data)
             # Read at UDPListener
+            self.wait()
 
-        # Test: Separate TUNNEL cmd from data on TCP
-        for i in range(0,0):        
+        print >>sys.stderr,"test: Separate TUNNEL cmd from data on TCP"
+        for i in range(0,NREPEATS):        
             self.randsize = random.randint(1,2048)
             self.data = Rand.rand_bytes(self.randsize)
             cmd = "TUNNELSEND 127.0.0.1:"+str(self.peer1port)+" "+str(self.randsize)+"\r\n";
@@ -110,18 +123,20 @@ class TestTunnel(unittest.TestCase):
             sleep(.1)
             self.s.send(self.data)
             # Read at UDPListener
+            self.wait()
 
-        # Test: Add command after TUNNEL
-        for i in range(0,0):        
+        print >>sys.stderr,"test: Add command after TUNNEL"
+        for i in range(0,NREPEATS):        
             self.randsize = random.randint(1,2048)
             self.data = Rand.rand_bytes(self.randsize)
             cmd = "TUNNELSEND 127.0.0.1:"+str(self.peer1port)+" "+str(self.randsize)+"\r\n";
             cmd2 = "SETMOREINFO 979152e57a82d8781eb1f2cd0c4ab8777e431012 1\r\n"
             self.s.send(cmd+self.data+cmd2)
             # Read at UDPListener
+            self.wait()
 
-        # Test: Send data in parts
-        for i in range(0,0):
+        print >>sys.stderr,"test: Send data in parts"
+        for i in range(0,NREPEATS):
             self.randsize = random.randint(1,2048)
             self.data = Rand.rand_bytes(self.randsize)
             cmd = "TUNNELSEND 127.0.0.1:"+str(self.peer1port)+" "+str(self.randsize)+"\r\n";
@@ -129,11 +144,12 @@ class TestTunnel(unittest.TestCase):
             self.s.send(self.data[0:self.randsize/2])
             self.s.send(self.data[self.randsize/2:])
             # Read at UDPListener
+            self.wait()
 
-        # Test: Send UDP, receive TCP
+        print >>sys.stderr,"test: Send UDP, receive TCP"
         self.s2 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         totaldata = ''
-        for i in range(0,2):
+        for i in range(0,NREPEATS):
             self.randsize = random.randint(1,2048)
             self.data = Rand.rand_bytes(self.randsize)
             

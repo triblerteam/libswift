@@ -871,12 +871,9 @@ void Channel::LibeventReceiveCallback(evutil_socket_t fd, short event, void *arg
 void    Channel::RecvDatagram (evutil_socket_t socket) {
     struct evbuffer *evb = evbuffer_new();
     Address addr;
+
     RecvFrom(socket, addr, evb);
     size_t evboriglen = evbuffer_get_length(evb);
-
-    fprintf(stderr,"RecvDatagram: Got %d bytes from %s\n", evboriglen, addr.str() );
-    dprintf("DDRecvDatagram: Got %d bytes from %s\n", evboriglen, addr.str() );
-
 
 #define return_log(...) { fprintf(stderr,__VA_ARGS__); evbuffer_free(evb); return; }
     if (evbuffer_get_length(evb)<4)

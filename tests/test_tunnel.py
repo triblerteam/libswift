@@ -39,9 +39,12 @@ class UDPListener(Thread):
 
     def run(self):
         while True:
-            data = self.myss.recv(5000)
-            print >>sys.stderr,"test: udp: Got",len(data)
-            self.testcase.assertEqual(len(data),self.testcase.randsize)
+            msg = self.myss.recv(5000)
+            print >>sys.stderr,"test: udp: Got",len(msg)
+            self.testcase.assertEqual(len(msg),4+self.testcase.randsize)
+            prefix = msg[0:4]
+            data = msg[4:]
+            self.testcase.assertEqual(prefix,"\xff\xff\xff\xff")
             self.testcase.assertEqual(data,self.testcase.data)
             self.testcase.notify()
 

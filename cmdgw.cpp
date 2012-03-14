@@ -882,7 +882,18 @@ void swift::CmdGwTunnelSendUDP(struct evbuffer *evb)
 		fprintf(stderr,"cmdgw: sendudp:");
 
 	struct evbuffer *sendevbuf = evbuffer_new();
-	int ret = evbuffer_remove_buffer(evb, sendevbuf, cmd_tunnel_expect);
+
+	// Add channel id 0xffffffff
+	char prefix[4] = { 0xff, 0xff, 0xff, 0xff };
+	int ret = evbuffer_add(sendevbuf,prefix,4);
+	if (ret < 0)
+	{
+		evbuffer_drain(evb,cmd_tunnel_expect);
+		evbuffer_free(sendevbuf);
+		fprintf(stderr,"cmdgw: sendudp :can't copy prefix to sendbuf!");
+		return;
+	}
+	ret = evbuffer_remove_buffer(evb, sendevbuf, cmd_tunnel_expect);
 	if (ret < 0)
 	{
 		evbuffer_drain(evb,cmd_tunnel_expect);

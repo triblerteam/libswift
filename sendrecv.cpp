@@ -873,6 +873,11 @@ void    Channel::RecvDatagram (evutil_socket_t socket) {
     Address addr;
     RecvFrom(socket, addr, evb);
     size_t evboriglen = evbuffer_get_length(evb);
+
+    fprintf(stderr,"RecvDatagram: Got %d bytes from %s\n", evboriglen, addr.str() );
+    dprintf("DDRecvDatagram: Got %d bytes from %s\n", evboriglen, addr.str() );
+
+
 #define return_log(...) { fprintf(stderr,__VA_ARGS__); evbuffer_free(evb); return; }
     if (evbuffer_get_length(evb)<4)
         return_log("socket layer weird: datagram shorter than 4 bytes from %s (prob ICMP unreach)\n",addr.str());
@@ -921,6 +926,11 @@ void    Channel::RecvDatagram (evutil_socket_t socket) {
         }
         //fprintf(stderr,"CHANNEL INCOMING DEF hass %s is id %d\n",hash.hex().c_str(),channel->id());
 
+    } else if (mych==0xffffffff) {
+    	// SOCKTUNNEL
+    	CmdGwTunnelUDPDataCameIn(addr,evb);
+    	evbuffer_free(evb);
+    	return;
     } else {
         mych = DecodeID(mych);
         if (mych>=channels.size())

@@ -46,6 +46,9 @@ class UDPListener(Thread):
 
 
 class TestTunnel(unittest.TestCase):
+    """
+    Test for swift ability to tunnel data from CMD TCP connections over UDP.
+    """
     
     def setUp(self):
         

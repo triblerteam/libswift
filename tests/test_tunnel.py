@@ -1,6 +1,7 @@
 # Written by Arno Bakker
 # see LICENSE.txt for license information
 #
+# TODO: split up test_?
 
 import sys
 import os

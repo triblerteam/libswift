@@ -861,7 +861,7 @@ void swift::CmdGwTunnelUDPDataCameIn(Address srcaddr, uint32_t srcchan, struct e
 
 	/*
 	 *  Format:
-	 *  TUNNELRECV addr nbytes\r\n
+	 *  TUNNELRECV ip:port/hexchanid nbytes\r\n
 	 *  <bytes>
 	 */
 

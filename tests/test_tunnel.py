@@ -116,7 +116,7 @@ class TestTunnel(unittest.TestCase):
         for i in range(0,NREPEATS):        
             self.randsize = random.randint(1,2048)
             self.data = Rand.rand_bytes(self.randsize)
-            cmd = "TUNNELSEND 127.0.0.1:"+str(self.peer1port)+" "+str(self.randsize)+"\r\n";
+            cmd = "TUNNELSEND 127.0.0.1:"+str(self.peer1port)+"/ffffffff "+str(self.randsize)+"\r\n";
             self.s.send(cmd+self.data)
             # Read at UDPListener
             self.wait()
@@ -125,7 +125,7 @@ class TestTunnel(unittest.TestCase):
         for i in range(0,NREPEATS):        
             self.randsize = random.randint(1,2048)
             self.data = Rand.rand_bytes(self.randsize)
-            cmd = "TUNNELSEND 127.0.0.1:"+str(self.peer1port)+" "+str(self.randsize)+"\r\n";
+            cmd = "TUNNELSEND 127.0.0.1:"+str(self.peer1port)+"/ffffffff "+str(self.randsize)+"\r\n";
             self.s.send(cmd)
             sleep(.1)
             self.s.send(self.data)
@@ -136,7 +136,7 @@ class TestTunnel(unittest.TestCase):
         for i in range(0,NREPEATS):        
             self.randsize = random.randint(1,2048)
             self.data = Rand.rand_bytes(self.randsize)
-            cmd = "TUNNELSEND 127.0.0.1:"+str(self.peer1port)+" "+str(self.randsize)+"\r\n";
+            cmd = "TUNNELSEND 127.0.0.1:"+str(self.peer1port)+"/ffffffff "+str(self.randsize)+"\r\n";
             cmd2 = "SETMOREINFO 979152e57a82d8781eb1f2cd0c4ab8777e431012 1\r\n"
             self.s.send(cmd+self.data+cmd2)
             # Read at UDPListener
@@ -146,7 +146,7 @@ class TestTunnel(unittest.TestCase):
         for i in range(0,NREPEATS):
             self.randsize = random.randint(1,2048)
             self.data = Rand.rand_bytes(self.randsize)
-            cmd = "TUNNELSEND 127.0.0.1:"+str(self.peer1port)+" "+str(self.randsize)+"\r\n";
+            cmd = "TUNNELSEND 127.0.0.1:"+str(self.peer1port)+"/ffffffff "+str(self.randsize)+"\r\n";
             self.s.send(cmd)
             self.s.send(self.data[0:self.randsize/2])
             self.s.send(self.data[self.randsize/2:])

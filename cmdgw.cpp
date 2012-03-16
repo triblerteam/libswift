@@ -68,6 +68,7 @@ typedef enum {
 cmdgw_tunnel_t cmd_tunnel_state=CMDGW_TUNNEL_SCAN4CRLF;
 uint32_t	 cmd_tunnel_expect=0;
 Address		 cmd_tunnel_dest_addr;
+uint32_t 	 cmd_tunnel_dest_chanid;
 evutil_socket_t   cmd_tunnel_sock=INVALID_SOCKET;
 
 // HTTP gateway address for PLAY cmd
@@ -733,17 +734,24 @@ int CmdGwHandleCommand(evutil_socket_t cmdsock, char *copyline)
     }
     else if (!strcmp(method,"TUNNELSEND"))
     {
-        token = strtok_r(paramstr," ",&savetok); // dest addr
+        token = strtok_r(paramstr,"/",&savetok); // dest addr
         if (token == NULL)
         	return ERROR_MISS_ARG;
         char *addrstr = token;
+        token = strtok_r(NULL," ",&savetok);      // channel
+        if (token == NULL)
+        	return ERROR_MISS_ARG;
+        char *chanstr = token;
         token = strtok_r(NULL," ",&savetok);      // size
         if (token == NULL)
         	return ERROR_MISS_ARG;
         char *sizestr = token;
 
     	cmd_tunnel_dest_addr = Address(addrstr);
-    	int n = sscanf(sizestr,"%u",&cmd_tunnel_expect);
+    	int n = sscanf(chanstr,"%08x",&cmd_tunnel_dest_chanid);
+    	if (n != 1)
+    		return ERROR_BAD_ARG;
+    	n = sscanf(sizestr,"%u",&cmd_tunnel_expect);
     	if (n != 1)
     		return ERROR_BAD_ARG;
 
@@ -844,12 +852,12 @@ bool InstallCmdGateway (struct event_base *evbase,Address cmdaddr,Address httpad
 
 
 // SOCKTUNNEL
-void swift::CmdGwTunnelUDPDataCameIn(Address src, struct evbuffer* evb)
+void swift::CmdGwTunnelUDPDataCameIn(Address srcaddr, uint32_t srcchan, struct evbuffer* evb)
 {
 	// Message received on UDP socket, forward over TCP conn.
 
 	if (cmd_gw_debug)
-		fprintf(stderr,"cmdgw: TunnelUDPData:DataCameIn %d bytes from %s\n", evbuffer_get_length(evb), src.str() );
+		fprintf(stderr,"cmdgw: TunnelUDPData:DataCameIn %d bytes from %s/%08x\n", evbuffer_get_length(evb), srcaddr.str(), srcchan );
 
 	/*
 	 *  Format:
@@ -858,8 +866,9 @@ void swift::CmdGwTunnelUDPDataCameIn(Address src, struct evbuffer* evb)
 	 */
 
     std::ostringstream oss;
-    oss << "TUNNELRECV " << src.str();
-    oss << " " << evbuffer_get_length(evb) << "\r\n";
+    oss << "TUNNELRECV " << srcaddr.str();
+    oss << "/" << std::hex << srcchan;
+    oss << " " << std::dec << evbuffer_get_length(evb) << "\r\n";
 
 	std::stringbuf *pbuf=oss.rdbuf();
 	size_t slen = strlen(pbuf->str().c_str());
@@ -883,9 +892,10 @@ void swift::CmdGwTunnelSendUDP(struct evbuffer *evb)
 
 	struct evbuffer *sendevbuf = evbuffer_new();
 
-	// Add channel id 0xffffffff
-	char prefix[4] = { 0xff, 0xff, 0xff, 0xff };
-	int ret = evbuffer_add(sendevbuf,prefix,4);
+	// Add channel id. Currently always CMDGW_TUNNEL_DEFAULT_CHANNEL_ID=0xffffffff
+	// but we may add a TUNNELSUBSCRIBE command later to allow the allocation
+	// of different channels for different TCP clients.
+	int ret = evbuffer_add_32be(sendevbuf, cmd_tunnel_dest_chanid);
 	if (ret < 0)
 	{
 		evbuffer_drain(evb,cmd_tunnel_expect);

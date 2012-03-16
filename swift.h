@@ -731,7 +731,7 @@ namespace swift {
     void Checkpoint(int fdes);
 
     // SOCKTUNNEL
-    void CmdGwTunnelUDPDataCameIn(Address src, struct evbuffer* evb);
+    void CmdGwTunnelUDPDataCameIn(Address srcaddr, uint32_t srcchan, struct evbuffer* evb);
     void CmdGwTunnelSendUDP(struct evbuffer *evb); // for friendship with Channel
 
 } // namespace end

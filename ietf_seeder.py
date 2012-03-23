@@ -35,7 +35,7 @@ HASHES = ["2b2fe5f1462e5b7ac4d70fa081e0169160b2d3a6", # SirKenRobinson_2006-480p
 
 
 def start_swift(path):
-    os.system("./swift 0.0.0.0:" + str(SWIFT_PORT) + " -d " + path + " &")
+    os.system("./swift -l 0.0.0.0:" + str(SWIFT_PORT) + " -d " + path + " &")
 
 def start_pymdht():
     my_node = Node(('127.0.0.1', 7000), RandomId())

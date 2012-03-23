@@ -36,10 +36,21 @@ see doc/index.html for marketing stuff, ideas and rants
 
 ========================
 
+Installing libevent
+-------------------
+
+wget https://github.com/downloads/libevent/libevent/libevent-2.0.18-stable.tar.gz
+tar -xaf libevent-2.0.18-stable.tar.gz 
+./configure
+make
+sudo make install
+
+
 Pymdht integration
 ------------------
 
 You need to get the pymdht submodule. It's simple.
 On the libswift directory, type:
-$ git submodule init
-$ git submodule update 
+
+git submodule init
+git submodule update 

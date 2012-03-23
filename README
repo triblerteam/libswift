@@ -33,3 +33,13 @@ see doc/index.html for marketing stuff, ideas and rants
 
     If you use an HTML5 browser (Chrome preferred), you are likely to see
     the bunny trailer at this point...
+
+========================
+
+Pymdht integration
+------------------
+
+You need to get the pymdht submodule. It's simple.
+On the libswift directory, type:
+$ git submodule init
+$ git submodule update 

@@ -44,7 +44,7 @@ def start_pymdht():
                  lookup_m_mod,
                  experimental_m_mod,
                  None,
-                 logging.ERROR,
+                 logging.DEBUG,
                  False)
     while 1:
         for h in HASHES:

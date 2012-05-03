@@ -127,8 +127,8 @@ bin_t        Channel::DequeueHint (bool *retransmitptr) {
             send = hint;
     }
     uint64_t mass = 0;
-    for(int i=0; i<hint_in_.size(); i++)
-        mass += hint_in_[i].bin.base_length();
+    //for(int i=0; i<hint_in_.size(); i++)
+    //    mass += hint_in_[i].bin.base_length();
     char bin_name_buf[32];
     dprintf("%s #%u dequeued %s [%lli]\n",tintstr(),id_,send.str(bin_name_buf),mass);
     return send;

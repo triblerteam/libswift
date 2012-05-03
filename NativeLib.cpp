@@ -3,7 +3,7 @@
  *  swift the multiparty transport protocol
  *
  *  Created by Victor Grishchenko on 2/15/10.
- *  Copyright 2010-2012 Delft University of Technology. All rights reserved.
+ *  Copyright 2010 Delft University of Technology. All rights reserved.
  *
  */
 #include <stdio.h>
@@ -20,7 +20,7 @@ using namespace swift;
 // httpgw.cpp functions
 bool InstallHTTPGateway (struct event_base *evbase,Address bindaddr, size_t chunk_size, double *maxspeed, char *storagedir);
 bool HTTPIsSending();
-std::string HTTPGetProgressString();
+std::string HTTPGetProgressString(Sha1Hash root_hash);
 
 
 // Local functions
@@ -145,7 +145,7 @@ JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_start (J
  * Method:    progress
  * Signature: ()I
  */
-JNIEXPORT jint JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_progress(JNIEnv * env, jobject obj) {
+JNIEXPORT jint JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_mainloop(JNIEnv * env, jobject obj) {
 
 	// Enter libevent mainloop
 	event_base_dispatch(Channel::evbase);
@@ -178,24 +178,37 @@ JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_stop(JNI
 
 /*
  * Class:     com_tudelft_swift_NativeLib
- * Method:    hello
+ * Method:    httpprogress
  * Signature: ()Ljava/lang/String;
  */
-JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_hello(JNIEnv * env, jobject obj) {
+JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_httpprogress(JNIEnv * env, jobject obj, jstring hash) {
 
 	std::stringstream rets;
+    jboolean blnIsCopy;
+
+	const char * tmpCstr = (env)->GetStringUTFChars(hash, &blnIsCopy);
 
 	if (file != -1)
 	{
 		rets << swift::SeqComplete(file);
 		rets << "/";
 		rets << swift::Size(file);
+
+		(env)->ReleaseStringUTFChars(hash , tmpCstr); // release jstring
+		return env->NewStringUTF( rets.str().c_str() );
 	}
 	else
-		return env->NewStringUTF(HTTPGetProgressString().c_str() );
+	{
+		Sha1Hash root_hash = Sha1Hash(true,tmpCstr);
+		std::string ret = HTTPGetProgressString(root_hash);
 
-	return env->NewStringUTF( rets.str().c_str() );
+		(env)->ReleaseStringUTFChars(hash , tmpCstr); // release jstring
+		return env->NewStringUTF(ret.c_str());
+	}
 }
+
+
+
 
 
 
@@ -217,4 +230,15 @@ void ReportCallback(int fd, short event, void *arg) {
 }
 
 
+
+
+/*
+ * Class:     com_tudelft_swift_NativeLib
+ * Method:    hello
+ * Signature: ()Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_hello(JNIEnv * env, jobject obj) {
+
+	return env->NewStringUTF("Hallo from Swift.. Library is working :-)");
+}
 

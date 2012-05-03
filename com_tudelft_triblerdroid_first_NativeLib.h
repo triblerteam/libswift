@@ -17,10 +17,10 @@ JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_start
 
 /*
  * Class:     com_tudelft_triblerdroid_first_NativeLib
- * Method:    progress
+ * Method:    mainloop
  * Signature: ()I
  */
-JNIEXPORT jint JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_progress
+JNIEXPORT jint JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_mainloop
   (JNIEnv *, jobject);
 
 /*
@@ -30,6 +30,14 @@ JNIEXPORT jint JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_progress
  */
 JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_stop
   (JNIEnv *, jobject);
+
+/*
+ * Class:     com_tudelft_triblerdroid_first_NativeLib
+ * Method:    httpprogress
+ * Signature: (Ljava/lang/String;)Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_httpprogress
+  (JNIEnv *, jobject, jstring);
 
 /*
  * Class:     com_tudelft_triblerdroid_first_NativeLib

@@ -102,7 +102,8 @@ void HttpGwCloseConnection (http_gw_t* req) {
 	// REMOVE.
 	swift::Checkpoint(req->transfer);
 
-	//swift::Close(req->transfer);
+	// Arno, 2012-03-26: Raul wants delete on HTTP close for IETF demo.
+	swift::Close(req->transfer);
 
 	*req = http_requests[--http_gw_reqs_open];
 }
@@ -545,22 +546,27 @@ bool HTTPIsSending()
  * which uses it to update the progress bar. Currently x is not the number of
  * bytes downloaded, but the number of bytes written to the HTTP connection.
  */
-std::string HTTPGetProgressString()
+std::string HTTPGetProgressString(Sha1Hash root_hash)
 {
 	std::stringstream rets;
 	//rets << "httpgw: ";
 
-	if (http_gw_reqs_open > 0)
-	{
-		//http_gw_t *req = &http_requests[http_gw_reqs_open-1];
-		http_gw_t *req = &http_requests[0];
-		//rets << swift::SeqComplete(req->transfer);
-		rets << req->offset;
-		rets << "/";
-		rets << swift::Size(req->transfer);
-	}
-	else
+	int transfer = swift::Find(root_hash);
+	if (transfer==-1)
 		rets << "0/0";
+	else
+	{
+		http_gw_t* req = HttpGwFindRequestByTransfer(transfer);
+		if (req == NULL)
+			rets << "0/0";
+		else
+		{
+			rets << swift::SeqComplete(transfer);
+			//rets << req->offset;
+			rets << "/";
+			rets << swift::Size(req->transfer);
+		}
+	}
 
 	return rets.str();
 }

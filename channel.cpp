@@ -380,6 +380,12 @@ int      swift::Open (const char* filename, const Sha1Hash& hash, Address tracke
         	c = new Channel(ft,INVALID_SOCKET,tracker);
         else if (Channel::tracker!=Address())
         	c = new Channel(ft);
+
+        // Arno, 2012-03-20: IETF DEMO, always connect to local DHT with
+        // swift PEX interface.
+        Address dhtaddr("127.0.0.1",9999);
+    	Channel *dhtc = new Channel(ft,INVALID_SOCKET,dhtaddr);
+
         return ft->file().file_descriptor();
     } else {
         if (ft)

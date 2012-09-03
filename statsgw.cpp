@@ -10,7 +10,7 @@
 
 #include "swift.h"
 #include <event2/http.h>
-
+#include <sstream>
 using namespace swift;
 
 int statsgw_reqs_count = 0;
@@ -227,6 +227,63 @@ void StatsGetSpeedCallback(struct evhttp_request *evreq)
 	evbuffer_free(evb);
 }
 
+//function to return data to stats activity
+std::string StatsGetSpeedCallback()
+{
+	if (statsgw_last_time == 0)
+	{
+		statsgw_last_time = NOW-1000000;
+	}
+
+	tint nu = Channel::Time();
+	uint64_t down = Channel::global_raw_bytes_down;
+	uint64_t up = Channel::global_raw_bytes_up;
+
+	int dspeed = 0, uspeed = 0;
+	tint tdiff = (nu - statsgw_last_time)/1000000;
+	if (tdiff > 0) {
+		dspeed = (int)(((down-statsgw_last_down)/1024) / tdiff);
+		uspeed = (int)(((up-statsgw_last_up)/1024) / tdiff);
+	}
+	statsgw_last_down = down;
+	statsgw_last_up = up;
+	statsgw_last_time = nu;
+
+	// Arno: PDD+ wants content speeds too
+	double contentdownspeed = 0.0, contentupspeed = 0.0;
+	uint32_t nleech=0,nseed=0;
+	for (int i=0; i<swift::FileTransfer::files.size(); i++)
+	{
+		FileTransfer *ft = swift::FileTransfer::files[i];
+		if (ft != NULL)
+		{
+			contentdownspeed += ft->GetCurrentSpeed(DDIR_DOWNLOAD);
+			contentupspeed += ft->GetCurrentSpeed(DDIR_UPLOAD);
+			nleech += ft->GetNumLeechers();
+			nseed += ft->GetNumSeeders();
+		}
+	}
+int cdownspeed = (int)(contentdownspeed/1024.0);
+int cupspeed = (int)(contentupspeed/1024.0);
+
+//dspeed, uspeed, cdownspeed, cupspeed, nleech, nseed
+std::stringstream ss;
+ss << dspeed;
+ss << "/";
+ss << uspeed;
+ss << "/";
+ss << nleech;
+ss << "/";
+ss << nseed;
+ss << "/";
+ss << (int)statsgw_last_down;
+ss << "/";
+ss << (int)statsgw_last_up;
+
+return ss.str();
+
+
+}
 
 void StatsGwNewRequestCallback (struct evhttp_request *evreq, void *arg) {
 

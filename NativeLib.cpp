@@ -22,7 +22,7 @@ bool InstallHTTPGateway (struct event_base *evbase,Address bindaddr, size_t chun
 bool HTTPIsSending();
 std::string HTTPGetProgressString(Sha1Hash root_hash);
 
-
+std::string StatsGetSpeedCallback();
 // Local functions
 void ReportCallback(int fd, short event, void *arg);
 struct event evreport;
@@ -227,6 +227,16 @@ void ReportCallback(int fd, short event, void *arg) {
     }
 
 	evtimer_add(&evreport, tint2tv(TINT_SEC));
+}
+/*
+ * Class:     com_tudelft_swift_NativeLib
+ * Method:    stats
+ * Signature: ()Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_stats(JNIEnv * env, jobject obj) {
+
+	std::string ret = StatsGetSpeedCallback();
+	return env->NewStringUTF( ret.c_str() );
 }
 
 

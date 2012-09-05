@@ -47,6 +47,14 @@ JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_httpprog
 JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_hello
   (JNIEnv *, jobject);
 
+/*
+ * Class:     com_tudelft_triblerdroid_first_NativeLib
+ * Method:    stats
+ * Signature: ()Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_stats
+  (JNIEnv *, jobject);
+
 #ifdef __cplusplus
 }
 #endif

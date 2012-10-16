@@ -34,6 +34,13 @@ env.Program(
     LIBPATH=libpath )
 
 env.Program( 
+    target='binstest4',
+    source=['binstest4.cpp'],
+    CPPPATH=cpppath,
+    LIBS=libs,
+    LIBPATH=libpath )
+
+env.Program( 
     target='dgramtest',
     source=['dgramtest.cpp'],
     CPPPATH=cpppath,
@@ -93,3 +100,9 @@ env.Program(
     LIBS=libs,
     LIBPATH=libpath )
 
+env.Program( 
+    target='storagetest',
+    source=['storagetest.cpp'],
+    CPPPATH=cpppath,
+    LIBS=libs,
+    LIBPATH=libpath )

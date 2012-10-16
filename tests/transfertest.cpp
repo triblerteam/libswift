@@ -50,7 +50,7 @@ TEST(TransferTest,TransferFile) {
     // now, submit a new file
     
     FileTransfer* seed_transfer = new FileTransfer(BTF);
-    HashTree* seed = & seed_transfer->file();
+    MmapHashTree* seed = seed_transfer->hashtree();
     EXPECT_TRUE(A==seed->hash(bin_t(0,0)));
     EXPECT_TRUE(E==seed->hash(bin_t(0,4)));
     EXPECT_TRUE(ABCD==seed->hash(bin_t(2,0)));
@@ -67,7 +67,7 @@ TEST(TransferTest,TransferFile) {
     // retrieve it
     unlink("copy");
     FileTransfer* leech_transfer = new FileTransfer("copy",seed->root_hash());
-    HashTree* leech = & leech_transfer->file();
+    MmapHashTree* leech = leech_transfer->hashtree();
     leech_transfer->picker().Randomize(0);
     // transfer peak hashes
     for(int i=0; i<seed->peak_count(); i++)
@@ -86,7 +86,7 @@ TEST(TransferTest,TransferFile) {
         if (i==2) { // now: stop, save, start
             delete leech_transfer;
             leech_transfer = new FileTransfer("copy",seed->root_hash(),false);
-            leech = & leech_transfer->file();
+            leech = leech_transfer->hashtree();
             leech_transfer->picker().Randomize(0);
             EXPECT_EQ(2,leech->chunks_complete());
             EXPECT_EQ(bin_t(2,0),leech->peak(0));
@@ -95,7 +95,7 @@ TEST(TransferTest,TransferFile) {
         ASSERT_NE(bin_t::NONE,next);
         ASSERT_TRUE(next.base_offset()<5);
         uint8_t buf[1024];         //size_t len = seed->storer->ReadData(next,&buf);
-        size_t len = pread(seed->file_descriptor(),buf,1024,next.base_offset()<<10);
+        size_t len = seed->get_storage()->Read(buf,1024,next.base_offset()<<10);
         bin_t sibling = next.sibling();
         if (sibling.base_offset()<seed->size_in_chunks())
             leech->OfferHash(sibling, seed->hash(sibling));

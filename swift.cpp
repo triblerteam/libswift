@@ -11,23 +11,25 @@
 #include "compat.h"
 #include "swift.h"
 #include <cfloat>
+#include <sstream>
 
 using namespace swift;
 
 
 // Local constants
 #define RESCAN_DIR_INTERVAL	30 // seconds
-
+#define REPORT_INTERVAL		 4 // seconds
 
 // Local prototypes
 #define quit(...) {fprintf(stderr,__VA_ARGS__); exit(1); }
-int OpenSwiftFile(const TCHAR* filename, const Sha1Hash& hash, Address tracker, bool force_check_diskvshash, uint32_t chunk_size);
-int OpenSwiftDirectory(const TCHAR* dirname, Address tracker, bool force_check_diskvshash, uint32_t chunk_size);
+int HandleSwiftFile(std::string filename, Sha1Hash root_hash, std::string trackerargstr, bool printurl, std::string urlfilename, double *maxspeed);
+int OpenSwiftFile(std::string filename, const Sha1Hash& hash, Address tracker, bool force_check_diskvshash, uint32_t chunk_size);
+int OpenSwiftDirectory(std::string dirname, Address tracker, bool force_check_diskvshash, uint32_t chunk_size);
 
 void ReportCallback(int fd, short event, void *arg);
 void EndCallback(int fd, short event, void *arg);
 void RescanDirCallback(int fd, short event, void *arg);
-
+int CreateMultifileSpec(std::string specfilename, int argc, char *argv[], int argidx);
 
 // Gateway stuff
 bool InstallHTTPGateway(struct event_base *evbase,Address addr,uint32_t chunk_size, double *maxspeed);
@@ -49,13 +51,18 @@ bool exitoncomplete=false;
 bool httpgw_enabled=false,cmdgw_enabled=false;
 // Gertjan fix
 bool do_nat_test = false;
+bool generate_multifile=false;
 
-char *scan_dirname = 0;
+std::string scan_dirname="";
 uint32_t chunk_size = SWIFT_DEFAULT_CHUNK_SIZE;
 Address tracker;
 
+long long int cmdgw_report_counter=0;
+long long int cmdgw_report_interval=1; // seconds
 
-int main (int argc, char** argv)
+// UNICODE: TODO, convert to std::string carrying UTF-8 arguments. Problem is
+// a string based getopt_long type parser.
+int utf8main (int argc, char** argv)
 {
     static struct option long_options[] =
     {
@@ -76,13 +83,21 @@ int main (int argc, char** argv)
         {"downrate",required_argument, 0, 'y'}, // RATELIMIT
         {"checkpoint",no_argument, 0, 'H'},
         {"chunksize",required_argument, 0, 'z'}, // CHUNKSIZE
-        {"printurl",no_argument, 0, 'm'},
+        {"printurl", no_argument, 0, 'm'},
+        {"urlfile",  required_argument, 0, 'r'},  // should be optional arg to printurl, but win32 getopt don't grok
+        {"multifile",required_argument, 0, 'M'}, // MULTIFILE
+        {"zerosdir",required_argument, 0, 'e'},  // ZEROSTATE
+        {"dummy",no_argument, 0, 'j'},  // WIN32
+        {"cmdgwint",required_argument, 0, 'C'}, // SWIFTPROC
+        {"filehex",    required_argument, 0, '1'},  // SWIFTPROCUNICODE
+        {"urlfilehex",required_argument, 0, '2'},   // SWIFTPROCUNICODE
+        {"zerosdirhex",required_argument, 0, '3'},  // SWIFTPROCUNICODE
+        {"zerostimeout",required_argument, 0, 'T'},  // ZEROSTATE
         {0, 0, 0, 0}
     };
 
     Sha1Hash root_hash;
-    char* filename = 0;
-    const char *destdir = 0, *trackerargstr = 0; // UNICODE?
+    std::string filename = "",destdir = "", trackerargstr= "", zerostatedir="", urlfilename="";
     bool printurl=false;
     Address bindaddr;
     Address httpaddr;
@@ -90,12 +105,13 @@ int main (int argc, char** argv)
     Address cmdaddr;
     tint wait_time = 0;
     double maxspeed[2] = {DBL_MAX,DBL_MAX};
+    tint zerostimeout = TINT_NEVER;
 
     LibraryInit();
     Channel::evbase = event_base_new();
 
     int c,n;
-    while ( -1 != (c = getopt_long (argc, argv, ":h:f:d:l:t:D:pg:s:c:o:u:y:z:wBNHm", long_options, 0)) ) {
+    while ( -1 != (c = getopt_long (argc, argv, ":h:f:d:l:t:D:pg:s:c:o:u:y:z:wBNHmM:e:r:jC:1:2:3:T:", long_options, 0)) ) {
         switch (c) {
             case 'h':
                 if (strlen(optarg)!=40)
@@ -118,13 +134,12 @@ int main (int argc, char** argv)
                 break;
             case 't':
                 tracker = Address(optarg);
-                trackerargstr = strdup(optarg); // UNICODE
+                trackerargstr = strdup(optarg);
                 if (tracker==Address())
                     quit("address must be hostname:port, ip:port or just port\n");
-                SetTracker(tracker);
                 break;
             case 'D':
-                Channel::debug_file = optarg ? fopen(optarg,"a") : stderr;
+                Channel::debug_file = optarg ? fopen_utf8(optarg,"a") : stderr;
                 break;
             // Arno hack: get opt diff Win32 doesn't allow -D without arg
             case 'B':
@@ -200,33 +215,61 @@ int main (int argc, char** argv)
             	quiet = true;
             	wait_time = 0;
             	break;
+            case 'r':
+           		urlfilename = strdup(optarg);
+           		break;
+            case 'M': // MULTIFILE
+            	filename = strdup(optarg);
+            	generate_multifile = true;
+            	break;
+            case 'e': // ZEROSTATE
+                zerostatedir = strdup(optarg); // UNICODE
+                wait_time = TINT_NEVER; // seed
+                break;
+            case 'j': // WIN32
+                break;
+            case 'C': // SWIFTPROC
+                if (sscanf(optarg,"%lli",&cmdgw_report_interval)!=1)
+                	quit("report interval must be int\n");
+                break;
+            case '1': // SWIFTPROCUNICODE
+				// Swift on Windows expects command line arguments as UTF-16.
+				// When swift is run with Python's popen, however, popen
+            	// doesn't allow us to pass params in UTF-16, hence workaround.
+            	// Format = hex encoded UTF-8
+                filename = hex2bin(strdup(optarg));
+                break;
+            case '2': // SWIFTPROCUNICODE
+           		urlfilename = hex2bin(strdup(optarg));
+           		break;
+            case '3': // ZEROSTATE // SWIFTPROCUNICODE
+                zerostatedir = hex2bin(strdup(optarg));
+                break;
+            case 'T': // ZEROSTATE
+            	double t=0.0;
+            	n = sscanf(optarg,"%lf",&t);
+            	if (n != 1)
+					quit("zerostimeout must be seconds as float\n");
+            	zerostimeout = t * TINT_SEC;
+                break;
         }
 
     }   // arguments parsed
 
 
-    if (httpgw_enabled)
-    {
-    	// Change current directory to a temporary one
-#ifdef _WIN32
-    	if (destdir == 0) {
-    		std::string destdirstr = gettmpdir();
-    		!::SetCurrentDirectory(destdirstr.c_str());
-    	}
-    	else
-    		!::SetCurrentDirectory(destdir);
-        TCHAR szDirectory[MAX_PATH] = "";
+	// Change dir to destdir, if set, or to tempdir if HTTPGW
+	if (destdir == "") {
+		if (httpgw_enabled) {
+			std::string dd = gettmpdir_utf8();
+			chdir_utf8(dd);
+		}
+	}
+	else
+		chdir_utf8(destdir);
 
-        !::GetCurrentDirectory(sizeof(szDirectory) - 1, szDirectory);
-        fprintf(stderr,"CWD %s\n",szDirectory);
-#else
-        if (destdir == 0)
-        	chdir(gettmpdir().c_str());
-        else
-        	chdir(destdir);
-#endif
-    }
-      
+	if (httpgw_enabled)
+		fprintf(stderr,"CWD %s\n",getcwd_utf8().c_str() );
+
     if (bindaddr!=Address()) { // seeding
         if (Listen(bindaddr)<=0)
             quit("cant listen to %s\n",bindaddr.str())
@@ -244,7 +287,7 @@ int main (int argc, char** argv)
         	fprintf(stderr,"swift: My listen port is %d\n", BoundAddress(sock).port() );
     }
 
-    if (tracker!=Address())
+    if (tracker!=Address() && !printurl)
         SetTracker(tracker);
 
     if (httpgw_enabled)
@@ -256,41 +299,42 @@ int main (int argc, char** argv)
     if (statsaddr != Address())
     	InstallStatsGateway(Channel::evbase,statsaddr);
 
+    // ZEROSTATE
+    ZeroState *zs = ZeroState::GetInstance();
+    zs->SetContentDir(zerostatedir);
+    zs->SetConnectTimeout(zerostimeout);
 
-    if (!cmdgw_enabled && !httpgw_enabled)
+
+    if (!cmdgw_enabled)
     {
 		int ret = -1;
-		if (filename || root_hash != Sha1Hash::ZERO) {
-			// Single file
-			if (root_hash!=Sha1Hash::ZERO && !filename)
-				filename = strdup(root_hash.hex().c_str());
+		if (!generate_multifile)
+		{
+			if (filename != "" || root_hash != Sha1Hash::ZERO) {
 
-			single_fd = OpenSwiftFile(filename,root_hash,Address(),false,chunk_size);
-			if (single_fd < 0)
-				quit("cannot open file %s",filename);
-			if (printurl) {
-				if (trackerargstr == NULL)
-					trackerargstr = "";
-				printf("tswift://%s/%s$%i\n", trackerargstr, RootMerkleHash(single_fd).hex().c_str(), chunk_size);
-
-				// Arno, 2012-01-04: LivingLab: Create checkpoint such that content
-				// can be copied to scanned dir and quickly loaded
-				swift::Checkpoint(single_fd);
+				// Single file
+				ret = HandleSwiftFile(filename,root_hash,trackerargstr,printurl,urlfilename,maxspeed);
 			}
+			else if (scan_dirname != "")
+				ret = OpenSwiftDirectory(scan_dirname,Address(),false,chunk_size);
 			else
-				printf("Root hash: %s\n", RootMerkleHash(single_fd).hex().c_str());
-
-			// RATELIMIT
-			FileTransfer *ft = FileTransfer::file(single_fd);
-			ft->SetMaxSpeed(DDIR_DOWNLOAD,maxspeed[DDIR_DOWNLOAD]);
-			ft->SetMaxSpeed(DDIR_UPLOAD,maxspeed[DDIR_UPLOAD]);
-
-			ret = single_fd;
+				ret = -1;
 		}
-		else if (scan_dirname != NULL)
-			ret = OpenSwiftDirectory(scan_dirname,Address(),false,chunk_size);
 		else
-			ret = -1;
+		{
+			// MULTIFILE
+			// Generate multi-file spec
+			ret = CreateMultifileSpec(filename,argc,argv,optind); //optind is global var points to first non-opt cmd line argument
+			if (ret < 0)
+			    quit("Cannot generate multi-file spec")
+			else
+			    // Calc roothash
+			    ret = HandleSwiftFile(filename,root_hash,trackerargstr,printurl,urlfilename,maxspeed);
+		}
+
+		// For testing
+		if (httpgw_enabled || zerostatedir != "")
+			ret = 0;
 
 		// No file/dir nor HTTP gateway nor CMD gateway, will never know what to swarm
 		if (ret == -1) {
@@ -312,6 +356,7 @@ int main (int argc, char** argv)
 			fprintf(stderr,"  -H, --checkpoint\tcreate checkpoint of file when complete for fast restart\n");
 			fprintf(stderr,"  -z, --chunksize\tchunk size in bytes (default: %d)\n", SWIFT_DEFAULT_CHUNK_SIZE);
 			fprintf(stderr,"  -m, --printurl\tcompose URL from tracker, file and chunksize\n");
+			fprintf(stderr,"  -M, --multifile\tcreate multi-file spec with given files\n");
 			return 1;
 		}
     }
@@ -332,11 +377,11 @@ int main (int argc, char** argv)
     if (wait_time == TINT_NEVER || (long)wait_time > 0) {
 		// Arno: always, for statsgw, rate control, etc.
 		evtimer_assign(&evreport, Channel::evbase, ReportCallback, NULL);
-		evtimer_add(&evreport, tint2tv(TINT_SEC));
+		evtimer_add(&evreport, tint2tv(REPORT_INTERVAL*TINT_SEC));
 
 
 		// Arno:
-		if (scan_dirname != NULL) {
+		if (scan_dirname != "") {
 			evtimer_assign(&evrescan, Channel::evbase, RescanDirCallback, NULL);
 			evtimer_add(&evrescan, tint2tv(RESCAN_DIR_INTERVAL*TINT_SEC));
 		}
@@ -364,92 +409,128 @@ int main (int argc, char** argv)
 }
 
 
-
-int OpenSwiftFile(const TCHAR* filename, const Sha1Hash& hash, Address tracker, bool force_check_diskvshash, uint32_t chunk_size)
+int HandleSwiftFile(std::string filename, Sha1Hash root_hash, std::string trackerargstr, bool printurl, std::string urlfilename, double *maxspeed)
 {
-	std::string bfn;
-	bfn.assign(filename);
-	bfn.append(".mbinmap");
-	const char *binmap_filename = bfn.c_str();
+	if (root_hash!=Sha1Hash::ZERO && filename == "")
+		filename = strdup(root_hash.hex().c_str());
+
+	single_fd = OpenSwiftFile(filename,root_hash,Address(),false,chunk_size);
+	if (single_fd < 0)
+		quit("cannot open file %s",filename.c_str());
+	if (printurl) {
+
+		FILE *fp = stdout;
+		if (urlfilename != "")
+		{
+			fp = fopen_utf8(urlfilename.c_str(),"wb");
+		    if (!fp)
+			{
+				print_error("cannot open file to write tswift URL to");
+				quit("cannot open URL file %s",urlfilename.c_str());
+			}
+		}
+
+		if (swift::Complete(single_fd) == 0)
+			quit("cannot open empty file %s",filename.c_str());
+	  
+                std::ostringstream oss;
+	        oss << "tswift:";
+		if (trackerargstr != "")
+	    	    oss << "//" << trackerargstr;
+	        oss << "/" << RootMerkleHash(single_fd).hex();
+ 		if (chunk_size != SWIFT_DEFAULT_CHUNK_SIZE)
+	  	    oss << "$" << chunk_size;
+	        oss << "\n";
+       	        
+	        std::stringbuf *pbuf=oss.rdbuf();
+	        if (pbuf == NULL)
+	             print_error("cannot create URL");
+		int ret = 0;
+		ret = fprintf(fp,"%s", pbuf->str().c_str());
+		if (ret <0)
+			print_error("cannot write URL");
+
+		if (urlfilename != "")
+			fclose(fp);
+	}
+	else
+	{
+		printf("Root hash: %s\n", RootMerkleHash(single_fd).hex().c_str());
+		fflush(stdout); // For testing
+	}
+
+	if (printurl || file_enable_checkpoint)
+	{
+	    // Arno, 2012-01-04: LivingLab: Create checkpoint such that content
+	    // can be copied to scanned dir and quickly loaded
+	    swift::Checkpoint(single_fd);
+	}
+
+	// RATELIMIT
+	FileTransfer *ft = FileTransfer::file(single_fd);
+	ft->SetMaxSpeed(DDIR_DOWNLOAD,maxspeed[DDIR_DOWNLOAD]);
+	ft->SetMaxSpeed(DDIR_UPLOAD,maxspeed[DDIR_UPLOAD]);
+
+	return single_fd;
+}
+
+
+int OpenSwiftFile(std::string filename, const Sha1Hash& hash, Address tracker, bool force_check_diskvshash, uint32_t chunk_size)
+{
+	std::string binmap_filename = filename;
+	binmap_filename.append(".mbinmap");
 
 	// Arno, 2012-01-03: Hack to discover root hash of a file on disk, such that
 	// we don't load it twice while rescanning a dir of content.
-	HashTree *ht = new HashTree(true,binmap_filename);
+	MmapHashTree *ht = new MmapHashTree(true,binmap_filename);
 
 	//	fprintf(stderr,"swift: parsedir: File %s may have hash %s\n", filename, ht->root_hash().hex().c_str() );
 
 	int fd = swift::Find(ht->root_hash());
+	delete ht;
 	if (fd == -1) {
 		if (!quiet)
-			fprintf(stderr,"swift: parsedir: Opening %s\n", filename);
+			fprintf(stderr,"swift: parsedir: Opening %s\n", filename.c_str());
 
 		fd = swift::Open(filename,hash,tracker,force_check_diskvshash,true,chunk_size);
 	}
 	else if (!quiet)
-		fprintf(stderr,"swift: parsedir: Ignoring loaded %s\n", filename);
+		fprintf(stderr,"swift: parsedir: Ignoring loaded %s\n", filename.c_str() );
 	return fd;
 }
 
 
-int OpenSwiftDirectory(const TCHAR* dirname, Address tracker, bool force_check_diskvshash, uint32_t chunk_size)
+int OpenSwiftDirectory(std::string dirname, Address tracker, bool force_check_diskvshash, uint32_t chunk_size)
 {
-#ifdef _WIN32
-	HANDLE hFind;
-	WIN32_FIND_DATA FindFileData;
-
-	TCHAR pathsearch[MAX_PATH];
-	strcpy(pathsearch,dirname);
-	strcat(pathsearch,"\\*.*");
-	hFind = FindFirstFile(pathsearch, &FindFileData);
-	if(hFind != INVALID_HANDLE_VALUE) {
-	    do {
-	    	//fprintf(stderr,"swift: parsedir: %s\n", FindFileData.cFileName);
-	    	if ((FindFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 && !strstr(FindFileData.cFileName,".mhash") && !strstr(FindFileData.cFileName,".mbinmap") ) {
-				TCHAR path[MAX_PATH];
-				strcpy(path,dirname);
-				strcat(path,"\\");
-				strcat(path,FindFileData.cFileName);
-
-				int fd = OpenSwiftFile(path,Sha1Hash::ZERO,tracker,force_check_diskvshash,chunk_size);
-				if (fd >= 0)
-					Checkpoint(fd);
-	    	}
-	    } while(FindNextFile(hFind, &FindFileData));
-
-	    FindClose(hFind);
-	    return 1;
-	}
-	else
-		return -1;
-#else
-	DIR *dirp = opendir(dirname);
-	if (dirp == NULL)
+	DirEntry *de = opendir_utf8(dirname);
+	if (de == NULL)
 		return -1;
 
 	while(1)
 	{
-		struct dirent *de = readdir(dirp);
+		if (!(de->isdir_ || de->filename_.rfind(".mhash") != std::string::npos || de->filename_.rfind(".mbinmap") != std::string::npos))
+		{
+			// Not dir, or metafile
+			std::string path = dirname;
+			path.append(FILE_SEP);
+			path.append(de->filename_);
+			int fd = OpenSwiftFile(path,Sha1Hash::ZERO,tracker,force_check_diskvshash,chunk_size);
+			if (fd >= 0)
+				Checkpoint(fd);
+		}
+
+		DirEntry *newde = readdir_utf8(de);
+		delete de;
+		de = newde;
 		if (de == NULL)
 			break;
-		if ((de->d_type & DT_DIR) !=0 || strstr(de->d_name,".mhash") || strstr(de->d_name,".mbinmap"))
-			continue;
-		char path[PATH_MAX];
-		strcpy(path,dirname);
-		strcat(path,"/");
-		strcat(path,de->d_name);
-
-		int fd = OpenSwiftFile(path,Sha1Hash::ZERO,tracker,force_check_diskvshash,chunk_size);
-		if (fd >= 0)
-			Checkpoint(fd);
 	}
-	closedir(dirp);
 	return 1;
-#endif
 }
 
 
 
-int CleanSwiftDirectory(const TCHAR* dirname)
+int CleanSwiftDirectory(std::string dirname)
 {
 	std::set<int>	delset;
 	std::vector<FileTransfer*>::iterator iter;
@@ -457,15 +538,10 @@ int CleanSwiftDirectory(const TCHAR* dirname)
 	{
 		FileTransfer *ft = *iter;
 		if (ft != NULL) {
-			std::string filename = ft->file().filename();
-#ifdef WIN32
-			struct _stat buf;
-#else
-			struct stat buf;
-#endif
+			std::string filename = ft->GetStorage()->GetOSPathName();
 			fprintf(stderr,"swift: clean: Checking %s\n", filename.c_str() );
-			int res = stat( filename.c_str(), &buf );
-			if( res < 0 && errno == ENOENT) {
+			int res = file_exists_utf8( filename );
+			if (res == 0) {
 				fprintf(stderr,"swift: clean: Missing %s\n", filename.c_str() );
 				delset.insert(ft->fd());
 			}
@@ -489,6 +565,8 @@ int CleanSwiftDirectory(const TCHAR* dirname)
 
 void ReportCallback(int fd, short event, void *arg) {
 	// Called every second to print/calc some stats
+	// Arno, 2012-05-24: Why-oh-why, update NOW
+	Channel::Time();
 
 	if (single_fd  >= 0)
 	{
@@ -516,19 +594,12 @@ void ReportCallback(int fd, short event, void *arg) {
     	// CHECKPOINT
     	if (file_enable_checkpoint && !file_checkpointed && IsComplete(single_fd))
     	{
-    		std::string binmap_filename = ft->file().filename();
+    		std::string binmap_filename = ft->GetStorage()->GetOSPathName();
     		binmap_filename.append(".mbinmap");
     		fprintf(stderr,"swift: Complete, checkpointing %s\n", binmap_filename.c_str() );
-    		FILE *fp = fopen(binmap_filename.c_str(),"wb");
-    		if (!fp) {
-    			print_error("cannot open mbinmap for writing");
-    			return;
-    		}
-    		if (ft->file().serialize(fp) < 0)
-    			print_error("writing to mbinmap");
-    		else
+
+    		if (swift::Checkpoint(single_fd) >= 0)
     			file_checkpointed = true;
-    		fclose(fp);
     	}
 
 
@@ -539,7 +610,7 @@ void ReportCallback(int fd, short event, void *arg) {
 	}
     if (httpgw_enabled)
     {
-        fprintf(stderr,".");
+        //fprintf(stderr,".");
 
         // ARNOSMPTODO: Restore fail behaviour when used in SwarmPlayer 3000.
         if (!HTTPIsSending()) {
@@ -556,15 +627,17 @@ void ReportCallback(int fd, short event, void *arg) {
     	int ret = event_base_loopexit(Channel::evbase,&tv);
     }
 	// SWIFTPROC
-	// ARNOSMPTODO: SCALE: perhaps less than once a second if many swarms
-	CmdGwUpdateDLStatesCallback();
+    if (cmdgw_report_interval == 1 || ((cmdgw_report_counter % cmdgw_report_interval) == 0))
+    	CmdGwUpdateDLStatesCallback();
+
+	cmdgw_report_counter++;
 
 	// Gertjan fix
 	// Arno, 2011-10-04: Temp disable
     //if (do_nat_test)
     //     nat_test_update();
 
-	evtimer_add(&evreport, tint2tv(TINT_SEC));
+	evtimer_add(&evreport, tint2tv(REPORT_INTERVAL*TINT_SEC));
 }
 
 void EndCallback(int fd, short event, void *arg) {
@@ -588,11 +661,120 @@ void RescanDirCallback(int fd, short event, void *arg) {
 }
 
 
+#include <iostream>
+
+// MULTIFILE
+typedef std::vector<std::pair<std::string,int64_t> >	filelist_t;
+int CreateMultifileSpec(std::string specfilename, int argc, char *argv[], int argidx)
+{
+	fprintf(stderr,"CreateMultiFileSpec: %s nfiles %d\n", specfilename.c_str(), argc-argidx );
+
+	filelist_t	filelist;
+
+
+	// MULTIFILE TODO: if arg is a directory, include all files
+
+
+	// 1. Make list of files
+	for (int i=argidx; i<argc; i++)
+	{
+		std::string pathname = argv[i];
+		int64_t fsize = file_size_by_path_utf8(pathname);
+		if( fsize < 0)
+		{
+			fprintf(stderr,"cannot open file in multi-spec list: %s\n", pathname.c_str() );
+			print_error("cannot open file in multi-spec list" );
+			return fsize;
+		}
+
+		// TODO: strip off common path from source pathnames
+		// TODO: convert path separator to standard
+		std::string pathstr = pathname; // TODO: UTF8-encode
+		filelist.push_back(std::make_pair(pathstr,fsize));
+	}
+
+	// 2. Files in multi-file spec must be sorted, such that creating a swarm
+	// from the same set of files results in the same swarm.
+	sort(filelist.begin(), filelist.end());
+
+
+	// 3. Create spec body
+	std::ostringstream specbody;
+
+	filelist_t::iterator iter;
+	for (iter = filelist.begin(); iter < filelist.end(); iter++)
+	{
+		specbody << Storage::os2specpn( (*iter).first );
+		specbody << " ";
+		specbody << (*iter).second << "\n";
+	}
+
+	// 4. Calc specsize
+	int specsize = Storage::MULTIFILE_PATHNAME.size()+1+0+1+specbody.str().size();
+	char numstr[100];
+	sprintf(numstr,"%d",specsize);
+	char numstr2[100];
+	sprintf(numstr2,"%d",specsize+strlen(numstr));
+	if (strlen(numstr) == strlen(numstr2))
+		specsize += strlen(numstr);
+	else
+		specsize += strlen(numstr)+(strlen(numstr2)-strlen(numstr));
+
+	// 5. Create spec as string
+	std::ostringstream spec;
+	spec << Storage::MULTIFILE_PATHNAME;
+	spec << " ";
+	spec << specsize;
+	spec << "\n";
+	spec << specbody.str();
+
+	fprintf(stderr,"spec: <%s>\n", spec.str().c_str() );
+
+	// 6. Write to specfile
+	FILE *fp = fopen_utf8(specfilename.c_str(),"wb");
+	int ret = fwrite(spec.str().c_str(),sizeof(char),spec.str().length(),fp);
+	if (ret < 0)
+		print_error("cannot write multi-file spec");
+	fclose(fp);
+
+	return ret;
+}
+
 
 #ifdef _WIN32
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
+
+// UTF-16 version of app entry point for console Windows-apps
+int wmain( int wargc, wchar_t *wargv[ ], wchar_t *envp[ ] )
 {
-    return main(__argc,__argv);
+	char **utf8args = (char **)malloc(wargc*sizeof(char *));
+	for (int i=0; i<wargc; i++)
+	{
+		//std::wcerr << "wmain: orig " << wargv[i] << std::endl;
+		std::string utf8c = utf16to8(wargv[i]);
+		utf8args[i] = strdup(utf8c.c_str());
+	}
+	return utf8main(wargc,utf8args);
 }
+
+// UTF-16 version of app entry point for non-console Windows apps
+int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow)
+{
+	int wargc=0;
+	fprintf(stderr,"wWinMain: enter\n");
+	// Arno, 2012-05-30: TODO: add dummy first arg, because getopt eats the first
+	// the argument when it is a non-console app. Currently done with -j dummy arg.
+	LPWSTR* wargv = CommandLineToArgvW(pCmdLine, &wargc );
+    return wmain(wargc,wargv,NULL);
+}
+
+#else
+
+// UNIX version of app entry point for console apps
+int main(int argc, char *argv[])
+{
+	// TODO: Convert to UTF-8 if locale not UTF-8
+	return utf8main(argc,argv);
+}
+
 #endif
 

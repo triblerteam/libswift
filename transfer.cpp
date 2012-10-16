@@ -28,22 +28,58 @@ std::vector<FileTransfer*> FileTransfer::files(20);
 
 // FIXME: separate Bootstrap() and Download(), then Size(), Progress(), SeqProgress()
 
-FileTransfer::FileTransfer (const char* filename, const Sha1Hash& _root_hash, bool force_check_diskvshash, bool check_netwvshash, uint32_t chunk_size) :
-    file_(filename,_root_hash,chunk_size,NULL,force_check_diskvshash,check_netwvshash), cb_installed(0), mychannels_(),
-    speedzerocount_(0), tracker_(), tracker_retry_interval_(TRACKER_RETRY_INTERVAL_START), tracker_retry_time_(NOW)
+FileTransfer::FileTransfer(std::string filename, const Sha1Hash& root_hash, bool force_check_diskvshash, bool check_netwvshash, uint32_t chunk_size, bool zerostate) :
+	Operational(), fd_(files.size()+1), cb_installed(0), mychannels_(),
+    speedzerocount_(0), tracker_(), tracker_retry_interval_(TRACKER_RETRY_INTERVAL_START),
+    tracker_retry_time_(NOW), zerostate_(zerostate)
 {
     if (files.size()<fd()+1)
         files.resize(fd()+1);
     files[fd()] = this;
-    if (ENABLE_VOD_PIECEPICKER) {
-    	// Ric: init availability
-    	availability_ = new Availability();
-    	// Ric: TODO assign picker based on input params...
-    	picker_ = new VodPiecePicker(this);
-    }
-    else
-    	picker_ = new SeqPiecePicker(this);
-    picker_->Randomize(rand()&63);
+
+    std::string destdir;
+	int ret = file_exists_utf8(filename);
+	if (ret == 2 && root_hash != Sha1Hash::ZERO) {
+		// Filename is a directory, download root_hash there
+		destdir = filename;
+		filename = destdir+FILE_SEP+root_hash.hex();
+	} else {
+		destdir = dirname_utf8(filename);
+		if (destdir == "")
+			destdir = ".";
+	}
+
+	// MULTIFILE
+    storage_ = new Storage(filename,destdir,fd());
+
+	std::string hash_filename;
+	hash_filename.assign(filename);
+	hash_filename.append(".mhash");
+
+	std::string binmap_filename;
+	binmap_filename.assign(filename);
+	binmap_filename.append(".mbinmap");
+
+	if (!zerostate_)
+	{
+		hashtree_ = (HashTree *)new MmapHashTree(storage_,root_hash,chunk_size,hash_filename,force_check_diskvshash,check_netwvshash,binmap_filename);
+
+		if (ENABLE_VOD_PIECEPICKER) {
+			// Ric: init availability
+			availability_ = new Availability();
+			// Ric: TODO assign picker based on input params...
+			picker_ = new VodPiecePicker(this);
+		}
+		else
+			picker_ = new SeqPiecePicker(this);
+		picker_->Randomize(rand()&63);
+	}
+	else
+	{
+		// ZEROHASH
+		hashtree_ = (HashTree *)new ZeroHashTree(storage_,root_hash,chunk_size,hash_filename,binmap_filename);
+	}
+
     init_time_ = Channel::Time();
     cur_speed_[DDIR_UPLOAD] = MovingAverageSpeed();
     cur_speed_[DDIR_DOWNLOAD] = MovingAverageSpeed();
@@ -54,6 +90,7 @@ FileTransfer::FileTransfer (const char* filename, const Sha1Hash& _root_hash, bo
     evtimer_assign(&evclean_,Channel::evbase,&FileTransfer::LibeventCleanCallback,this);
     evtimer_add(&evclean_,tint2tv(5*TINT_SEC));
 
+    UpdateOperational();
 }
 
 
@@ -68,19 +105,19 @@ void FileTransfer::LibeventCleanCallback(int fd, short event, void *arg)
 		return;
 
 	// STL and MS and conditional delete from set not a happy place :-(
-	std::set<Channel *>	delset;
-	std::set<Channel *>::iterator iter;
+	channels_t	delset;
+	channels_t::iterator iter;
 	bool hasestablishedpeers=false;
 	for (iter=ft->mychannels_.begin(); iter!=ft->mychannels_.end(); iter++)
 	{
 		Channel *c = *iter;
 		if (c != NULL) {
 			if (c->IsScheduled4Close())
-				delset.insert(c);
+				delset.push_back(c);
 
 			if (c->is_established ()) {
 				hasestablishedpeers = true;
-				//fprintf(stderr,"%s peer %s\n", ft->file().root_hash().hex().c_str(), c->peer().str() );
+				//fprintf(stderr,"%s peer %s\n", ft->hashtree()->root_hash().hex().c_str(), c->peer().str() );
 			}
 		}
 	}
@@ -89,8 +126,7 @@ void FileTransfer::LibeventCleanCallback(int fd, short event, void *arg)
 		Channel *c = *iter;
 		dprintf("%s #%u clean cb close\n",tintstr(),c->id());
 		c->Close();
-		ft->mychannels_.erase(c);
-		delete c;
+		delete c; // Does erase from transfer() list of channels
     }
 
 	// Arno, 2012-02-24: Check for liveliness.
@@ -127,6 +163,9 @@ void FileTransfer::ReConnectToTrackerIfAllowed(bool hasestablishedpeers)
 
 void FileTransfer::ConnectToTracker()
 {
+	if (!IsOperational())
+		return;
+
 	Channel *c = NULL;
     if (tracker_ != Address())
     	c = new Channel(this,INVALID_SOCKET,tracker_);
@@ -137,7 +176,7 @@ void FileTransfer::ConnectToTracker()
 
 Channel * FileTransfer::FindChannel(const Address &addr, Channel *notc)
 {
-	std::set<Channel *>::iterator iter;
+	channels_t::iterator iter;
 	for (iter=mychannels_.begin(); iter!=mychannels_.end(); iter++)
 	{
 		Channel *c = *iter;
@@ -151,6 +190,11 @@ Channel * FileTransfer::FindChannel(const Address &addr, Channel *notc)
 }
 
 
+void FileTransfer::UpdateOperational()
+{
+    if ((hashtree_ != NULL && !hashtree_->IsOperational()) || !storage_->IsOperational())
+    	SetBroken();
+}
 
 
 void    Channel::CloseTransfer (FileTransfer* trans) {
@@ -184,7 +228,7 @@ void swift::ExternallyRetrieved (int transfer,bin_t piece) {
     FileTransfer* trans = FileTransfer::file(transfer);
     if (!trans)
         return;
-    trans->ack_out().set(piece); // that easy
+    trans->ack_out()->set(piece); // that easy
 }
 
 
@@ -212,9 +256,14 @@ void swift::RemoveProgressCallback (int transfer, ProgressCallback cb) {
 FileTransfer::~FileTransfer ()
 {
     Channel::CloseTransfer(this);
+	delete hashtree_;
+	delete storage_;
     files[fd()] = NULL;
-    delete picker_;
-    delete availability_;
+	if (!IsZeroState())
+	{
+		delete picker_;
+		delete availability_;
+	}
   
     // Arno, 2012-02-06: Cancel cleanup timer, otherwise chaos!
     evtimer_del(&evclean_);
@@ -238,9 +287,9 @@ int swift:: Find (Sha1Hash hash) {
 
 
 
-bool FileTransfer::OnPexIn (const Address& addr) {
+bool FileTransfer::OnPexAddIn (const Address& addr) {
 
-	//fprintf(stderr,"FileTransfer::OnPexIn: %s\n", addr.str() );
+	//fprintf(stderr,"FileTransfer::OnPexAddIn: %s\n", addr.str() );
 	// Arno: this brings safety, but prevents private swift installations.
 	// TODO: detect public internet.
 	//if (addr.is_private())
@@ -333,7 +382,7 @@ double		FileTransfer::GetMaxSpeed(data_direction_t ddir)
 uint32_t	FileTransfer::GetNumLeechers()
 {
 	uint32_t count = 0;
-	std::set<Channel *>::iterator iter;
+	channels_t::iterator iter;
     for (iter=mychannels_.begin(); iter!=mychannels_.end(); iter++)
     {
 	    Channel *c = *iter;
@@ -348,7 +397,7 @@ uint32_t	FileTransfer::GetNumLeechers()
 uint32_t	FileTransfer::GetNumSeeders()
 {
 	uint32_t count = 0;
-	std::set<Channel *>::iterator iter;
+	channels_t::iterator iter;
     for (iter=mychannels_.begin(); iter!=mychannels_.end(); iter++)
     {
 	    Channel *c = *iter;
@@ -357,4 +406,10 @@ uint32_t	FileTransfer::GetNumSeeders()
 			    count++;
     }
     return count;
+}
+
+
+void FileTransfer::AddPeer(Address &peer)
+{
+	Channel *c = new Channel(this,INVALID_SOCKET,peer);
 }

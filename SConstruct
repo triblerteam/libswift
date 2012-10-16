@@ -20,15 +20,16 @@ DEBUG = True
 TestDir='tests'
 
 target = 'swift'
-source = [ 'bin.cpp', 'binmap.cpp','binheap.cpp', 'sha1.cpp','hashtree.cpp',
+source = [ 'bin.cpp', 'binmap.cpp', 'sha1.cpp','hashtree.cpp',
     	   'transfer.cpp', 'channel.cpp', 'sendrecv.cpp', 'send_control.cpp', 
-    	   'compat.cpp','avgspeed.cpp', 'availability.cpp']
-
+    	   'compat.cpp','avgspeed.cpp', 'avail.cpp', 'cmdgw.cpp', 
+           'storage.cpp', 'zerostate.cpp', 'zerohashtree.cpp']
+# cmdgw.cpp now in there for SOCKTUNNEL
 
 env = Environment()
 if sys.platform == "win32":
-    #libevent2path = '\\build\\libevent-2.0.14-stable'
-    libevent2path = '\\build\\ttuki\\libevent-2.0.15-arno-http'
+    libevent2path = '\\build\\libevent-2.0.19-stable'
+    #libevent2path = '\\build\\ttuki\\libevent-2.0.15-arno-http'
 
     # "MSVC works out of the box". Sure.
     # Make sure scons finds cl.exe, etc.
@@ -55,6 +56,8 @@ if sys.platform == "win32":
     if DEBUG:
         env.Append(CXXFLAGS="/Zi /MTd")
         env.Append(LINKFLAGS="/DEBUG")
+    else:
+        env.Append(CXXFLAGS="/DNDEBUG") # disable asserts
     env.Append(CXXPATH=cxxpath)
     env.Append(CPPPATH=cxxpath)
 
@@ -80,7 +83,7 @@ if sys.platform == "win32":
     if not DEBUG:
     	env.Append(LINKFLAGS="/SUBSYSTEM:WINDOWS")
     
-    APPSOURCE=['swift.cpp','httpgw.cpp','statsgw.cpp','cmdgw.cpp','getopt.c','getopt_long.c']
+    APPSOURCE=['swift.cpp','httpgw.cpp','statsgw.cpp','getopt.c','getopt_long.c']
     
 else:
     libevent2path = '/arno/pkgs/libevent-2.0.15-arno-http'
@@ -114,7 +117,7 @@ else:
     env.Append(LINKFLAGS=linkflags);
 
 
-    APPSOURCE=['swift.cpp','httpgw.cpp','statsgw.cpp','cmdgw.cpp']
+    APPSOURCE=['swift.cpp','httpgw.cpp','statsgw.cpp']
 
 if DEBUG:
     env.Append(CXXFLAGS="-DDEBUG")
@@ -131,10 +134,11 @@ env.Program(
    #CPPPATH=cpppath,
    LIBS=[libs,'libswift'],
    LIBPATH=libpath+':.')
+
    
 Export("env")
 Export("libs")
 Export("libpath")
 Export("DEBUG")
 # Arno: uncomment to build tests
-SConscript('tests/SConscript')
+#SConscript('tests/SConscript')

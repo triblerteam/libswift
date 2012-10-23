@@ -18,6 +18,6 @@ swift-dynamic: swift
 	touch swift-dynamic
 
 clean:
-	rm *.o swift swift-static swift-dynamic2>/dev/null
+	rm *.o swift swift-static swift-dynamic>/dev/null
 
 .PHONY: all clean swift swift-static swift-dynamic

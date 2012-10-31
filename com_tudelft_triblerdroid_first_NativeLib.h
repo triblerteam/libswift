@@ -47,6 +47,9 @@ JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_httpprog
 JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_hello
   (JNIEnv *, jobject);
 
+JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_roothash
+  (JNIEnv *, jobject, jstring);
+
 #ifdef __cplusplus
 }
 #endif

@@ -139,6 +139,17 @@ JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_start (J
     return env->NewStringUTF("started");
 }
 
+//Raul, 20121031: get roothash for a given file
+JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_roothash(JNIEnv * env, jobject obj, jstring origin) {
+    jboolean blnIsCopy;
+
+	char const* filename = (char *)(env)->GetStringUTFChars(origin , &blnIsCopy);
+	file = Open(filename,Sha1Hash::ZERO);
+    if (file<=0)
+         return env->NewStringUTF("roothash: cannot open destination file");
+    return env->NewStringUTF(RootMerkleHash(file).hex().c_str());
+}
+
 
 /*
  * Class:     com_tudelft_swift_NativeLib

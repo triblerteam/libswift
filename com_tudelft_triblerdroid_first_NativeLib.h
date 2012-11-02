@@ -50,6 +50,14 @@ JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_hello
 JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_roothash
   (JNIEnv *, jobject, jstring);
 
+/*
+ * Class:     com_tudelft_triblerdroid_first_NativeLib
+ * Method:    stats
+ * Signature: ()Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_first_NativeLib_stats
+  (JNIEnv *, jobject);
+
 #ifdef __cplusplus
 }
 #endif

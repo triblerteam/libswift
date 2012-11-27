@@ -32,6 +32,7 @@ std::string HttpGwStatsGetSpeedCallback(Sha1Hash swarmid);
 // Libevent* functions are executed by Mainloop thread,
 void LibeventKeepaliveCallback(int fd, short event, void *arg);
 void LibeventOpenCallback(int fd, short event, void *arg);
+void LibeventCloseCallback(int fd, short event, void *arg);
 void LibeventGetHTTPProgressCallback(int fd, short event, void *arg);
 void LibeventGetStatsCallback(int fd, short event, void *arg);
 void LibeventLiveAddCallback(int fd, short event, void *arg);
@@ -57,22 +58,30 @@ class AsyncParams
     std::string filename_;
     char 	*data_;
     int		datalen_;
+    bool 	removestate_;
+    bool 	removecontent_;
 
     AsyncParams(Sha1Hash &swarmid, Address &tracker, std::string filename) :
 	callid_(-1), swarmid_(swarmid), tracker_(tracker), filename_(filename),
-	data_(NULL), datalen_(-1)
+	data_(NULL), datalen_(-1), removestate_(false), removecontent_(false)
     {
     }
 
     AsyncParams(Sha1Hash &swarmid) :
 	callid_(-1), swarmid_(swarmid), tracker_(""), filename_(""),
-	data_(NULL), datalen_(-1)
+	data_(NULL), datalen_(-1), removestate_(false), removecontent_(false)
     {
     }
 
     AsyncParams(char *data, int datalen) :
 	callid_(-1), swarmid_(Sha1Hash::ZERO), tracker_(""), filename_(""),
-	data_(data), datalen_(datalen)
+	data_(data), datalen_(datalen), removestate_(false), removecontent_(false)
+    {
+    }
+
+    AsyncParams(Sha1Hash &swarmid, bool removestate, bool removecontent) :
+	callid_(-1), swarmid_(swarmid), tracker_(""), filename_(""),
+	data_(NULL), datalen_(-1), removestate_(removestate), removecontent_(removecontent)
     {
     }
 
@@ -349,6 +358,61 @@ void LibeventOpenCallback(int fd, short event, void *arg)
 }
 
 
+
+
+JNIEXPORT jint JNICALL Java_com_tudelft_triblerdroid_swift_NativeLib_asyncClose( JNIEnv * env, jobject obj, jstring jswarmid, jboolean jremovestate, jboolean jremovecontent )
+{
+    dprintf("NativeLib::Close called\n");
+
+    if (!enginestarted)
+	return -1; // "Engine not yet initialized"
+
+    jboolean blnIsCopy;
+
+    const char *swarmidcstr = (env)->GetStringUTFChars(jswarmid, &blnIsCopy);
+
+    Sha1Hash swarmid = Sha1Hash(true,swarmidcstr);
+    bool rs = (bool)jremovestate;
+    bool rc = (bool)jremovecontent;
+    AsyncParams *aptr = new AsyncParams(swarmid,rs,rc);
+
+    // Register callback
+    int callid = AsyncRegisterCallback(&LibeventCloseCallback,aptr);
+
+    (env)->ReleaseStringUTFChars(jswarmid, swarmidcstr); // release jstring
+
+    return callid;
+}
+
+
+/**
+ * Called by thread that called Mainloop which is the only thread active in
+ * swift, so all swift:: calls are now thread-safe.
+ */
+void LibeventCloseCallback(int fd, short event, void *arg)
+{
+    AsyncParams *aptr = (AsyncParams *) arg;
+
+    std::string errorstr="";
+    dprintf("NativeLib::Close: %s\n", aptr->swarmid_.hex().c_str() );
+    int td = swift::Find(aptr->swarmid_);
+    if (td < 0)
+	errorstr = "cannot find swarm to close";
+    else
+    {
+	errorstr = aptr->swarmid_.hex();
+	swift::Close(td,aptr->removestate_,aptr->removecontent_);
+	dprintf("NativeLib::Close: swarmid: %s\n", errorstr.c_str());
+    }
+
+    // Register result
+    AsyncSetResult(aptr->callid_,errorstr);
+
+    delete aptr;
+}
+
+
+
 JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_swift_NativeLib_hashCheckOffline(JNIEnv *env, jobject obj, jstring jfilename )
 {
     dprintf("NativeLib::hashCheckOffline called\n");
@@ -533,7 +597,7 @@ JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_swift_NativeLib_LiveAdd(
 	// Must copy data, as the actual swift::LiveWrite call will be done on Mainloop thread
 	// Data deallocated via AsyncParams deconstructor.
 	char *copydata = new char[datalen];
-	memcpy(data,copydata,datalen);
+	memcpy(copydata,data,datalen);
 
 	AsyncParams *aptr = new AsyncParams(copydata,datalen);
 

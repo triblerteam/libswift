@@ -65,8 +65,8 @@ public class NativeLib {
    * 
    * Thread-safe.
    * 
-   * @param swarmid	SwarmID in hex, may be all 0 for seeding
-   * @param tracker tracker for this download
+   * @param swarmid	SwarmID in hex, may be all 0 for seeding.
+   * @param tracker tracker for this download.
    * @param filename Location where to store content.
    * @return callid or -1 on error.
    * asyncGetResult(callid) will return swarmid (=OK) or error string.
@@ -74,6 +74,18 @@ public class NativeLib {
   public native int asyncOpen( String swarmid, String tracker, String filename );
 
 
+  /** 
+   * Remove swift download. 
+   * Thread-safe.
+   * 
+   * @param swarmid	SwarmID in hex.
+   * @param removestate whether to remove an existing checkpoint.
+   * @param removecontent whether to remove the content already on disk.
+   * @return callid or -1 on error.
+   * asyncGetResult(callid) will return swarmid (=OK) or error string.
+   */
+  public native int asyncClose( String swarmid, boolean removestate, boolean removecontent );
+  
   
   /** 
    * Write a swift checkpoint for the specified file.
@@ -84,6 +96,7 @@ public class NativeLib {
    * @return swarmid (=OK) or error string.
    */
   public native String hashCheckOffline( String filename );
+
 
   
   /** 

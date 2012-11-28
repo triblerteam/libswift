@@ -18,6 +18,7 @@ LOCAL_CFLAGS    += -D__NEW__
 
 LOCAL_STATIC_LIBRARIES := libevent2 
 
+# Log from native: http://mobilepearls.com/labs/native-android-api/#logging
 # LOCAL_LDLIBS := -llog
 
 include $(BUILD_SHARED_LIBRARY)

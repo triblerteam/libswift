@@ -69,6 +69,7 @@ if sys.platform == "win32":
     # Update lib search path
     libpath = os.environ['LIBPATH']
     libpath += libevent2path+';'
+    linkflags = ''
 
     # Somehow linker can't find uuid.lib
     libpath += 'C:\\Program Files\\Microsoft SDKs\\Windows\\v6.0A\\Lib;'

@@ -212,8 +212,6 @@ JNIEXPORT void JNICALL Java_com_tudelft_triblerdroid_swift_NativeLib_Shutdown(JN
  */
 int AsyncRegisterCallback(AsyncParams *aptr)
 {
-    __android_log_print(ANDROID_LOG_WARN, "SwiftLive", "reg: enter\n" );
-
     int prc = pthread_mutex_lock(&asyncMutex);
     if (prc != 0)
     {
@@ -243,8 +241,6 @@ int AsyncRegisterCallback(AsyncParams *aptr)
  */
 void LibeventPollAsyncCallback(int fd, short event, void *arg)
 {
-    __android_log_print(ANDROID_LOG_WARN, "SwiftLive", "POLL **********************************\n" );
-
     int prc = pthread_mutex_lock(&asyncMutex);
     if (prc != 0)
     {
@@ -370,6 +366,8 @@ JNIEXPORT jint JNICALL Java_com_tudelft_triblerdroid_swift_NativeLib_asyncOpen( 
 void LibeventOpenCallback(int fd, short event, void *arg)
 {
     AsyncParams *aptr = (AsyncParams *) arg;
+
+    __android_log_print(ANDROID_LOG_WARN, "SwiftNative", "Opening %s track %s\n", aptr->swarmid_.hex().c_str(), aptr->tracker_.str() );
 
     std::string errorstr="";
     dprintf("NativeLib::Open: %s writing to %s\n", aptr->swarmid_.hex().c_str(), aptr->filename_.c_str() );
@@ -599,8 +597,6 @@ JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_swift_NativeLib_LiveCrea
  */
 JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_swift_NativeLib_LiveAdd(JNIEnv *env, jobject obj, jstring jswarmid, jbyteArray dataArray, jint dataOffset, jint dataLength )
 {
-    __android_log_print(ANDROID_LOG_WARN, "SwiftLive", "nat: async push enter\n" );
-
     if (!enginestarted)
 	return env->NewStringUTF("Engine not yet initialized");
 
@@ -616,8 +612,6 @@ JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_swift_NativeLib_LiveAdd(
     char *data = (char *)b;
     int datalen = (int)dataLength;
     dprintf("NativeLib::LiveAdd: Got %p bytes %d from java\n", data, datalen );
-
-    //__android_log_print(ANDROID_LOG_WARN, "SwiftLive", "nat: async push %u\n", datalen );
 
     if (data != NULL && datalen > 0)
     {
@@ -647,14 +641,10 @@ void LibeventLiveAddCallback(int fd, short event, void *arg)
 {
     AsyncParams *aptr = (AsyncParams *) arg;
 
-    __android_log_print(ANDROID_LOG_WARN, "SwiftLive", "nat: add %u total %u\n", aptr->datalen_, evbuffer_get_length(livesource_evb) );
-
     // Create chunks of chunk_size()
     int ret = evbuffer_add(livesource_evb,aptr->data_,aptr->datalen_);
     if (ret < 0)
         print_error("live: cam: error evbuffer_add");
-
-    __android_log_print(ANDROID_LOG_WARN, "SwiftLive", "nat: after\n" );
 
     if (evbuffer_get_length(livesource_evb) > livesource_lt->chunk_size())
     {
@@ -662,11 +652,11 @@ void LibeventLiveAddCallback(int fd, short event, void *arg)
         size_t nchunklen = livesource_lt->chunk_size() * (size_t)(evbuffer_get_length(livesource_evb)/livesource_lt->chunk_size());
         uint8_t *chunks = evbuffer_pullup(livesource_evb, nchunklen);
 
-        __android_log_print(ANDROID_LOG_WARN, "SwiftLive", "nat: write %u\n", nchunklen );
-
         int nwrite = swift::LiveWrite(livesource_lt, chunks, nchunklen);
         if (nwrite < -1)
             print_error("live: create: error");
+
+        __android_log_print(ANDROID_LOG_WARN, "SwiftNative", "Wrote %uc\n", nchunklen/1024 );
 
         int ret = evbuffer_drain(livesource_evb, nchunklen);
         if (ret < 0)

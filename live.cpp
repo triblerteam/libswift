@@ -130,15 +130,10 @@ uint64_t      LiveTransfer::GetHookinOffset() {
 }
 
 
-#include <android/log.h>
-
-
 int LiveTransfer::AddData(const void *buf, size_t nbyte)
 {
     //fprintf(stderr,"live: AddData: writing to storage %lu\n", nbyte);
     dprintf("live: AddData: receiving %u\n", nbyte );
-
-    __android_log_print(ANDROID_LOG_WARN, "SwiftLive", "live: AddData: recv %u\n", nbyte );
 
     // Save chunk on disk
     int ret = storage_->Write(buf,nbyte,offset_);

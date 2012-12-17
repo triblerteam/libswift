@@ -1138,4 +1138,11 @@ namespace swift {
 #endif
 #define eprintf(...) fprintf(stderr,__VA_ARGS__)
 
+#ifdef SWIFT_LOG2ANDROID
+#include <android/log.h>
+#define dprintf(...) do { __android_log_print(ANDROID_LOG_WARN, "SwiftNative", __VA_ARGS__ ); } while (0)
+#endif
+
+
+
 #endif

@@ -611,7 +611,7 @@ JNIEXPORT jstring JNICALL Java_com_tudelft_triblerdroid_swift_NativeLib_LiveAdd(
 
     char *data = (char *)b;
     int datalen = (int)dataLength;
-    dprintf("NativeLib::LiveAdd: Got %p bytes %d from java\n", data, datalen );
+    //dprintf("NativeLib::LiveAdd: Got %p bytes %d from java\n", data, datalen );
 
     if (data != NULL && datalen > 0)
     {

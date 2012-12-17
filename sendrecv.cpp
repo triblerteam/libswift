@@ -1141,7 +1141,18 @@ void    Channel::RecvDatagram (evutil_socket_t socket) {
                 // attempt is to new channel or to existing. Currently read
                 // in OnHandshake()
                 //
-                return_log("%s #0 have a channel already to %s\n",tintstr(),addr.str());
+        	// Arno, 2012-12-17: in Android app peers have hardwired port
+        	// so this happens often. Assuming that sender has reasons
+        	// to rehandshake, now just close old.
+                dprintf("%s #0 have a channel already to %s, closing old\n",tintstr(),addr.str());
+
+                // Arno, 2012-12-17: On Android closing the channel causes swift
+                // to crash. On Win32 I don't see this behaviour. For now, let
+                // the channel die out by itself. The sender will not accept
+                // the datagrams sent by this peer on the old channel because
+                // it doesn't know the old channel ID.
+                //existchannel->Close(false);
+                channel = NULL;
             } else {
                 channel = existchannel;
                 //fprintf(stderr,"Channel::RecvDatagram: HANDSHAKE: reuse channel %s\n", channel->peer_.str() );
